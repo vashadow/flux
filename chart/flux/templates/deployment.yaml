@@ -55,6 +55,12 @@ spec:
           path: "{{ .Values.registry.acr.hostPath }}"
           type: ""
       {{- end }}
+      {{- if .Values.gpgKeys.secretName }}
+      - name: gpg-keys
+        secret:
+          secretName: {{ .Values.gpgKeys.secretName }}
+          defaultMode: 0400
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -81,6 +87,10 @@ spec:
             mountPath: /etc/kubernetes/azure.json
             readOnly: true
           {{- end }}
+          {{- if .Values.gpgKeys.secretName }}
+          - name: gpg-keys
+            mountPath: /root/gpg-import
+          {{- end }}
           env:
           - name: KUBECONFIG
             value: /root/.kubectl/config
@@ -99,6 +109,9 @@ spec:
           - --git-path={{ .Values.git.path }}
           - --git-user={{ .Values.git.user }}
           - --git-email={{ .Values.git.email }}
+          {{- if .Values.git.signingKey }}
+          - --git-signing-key={{ .Values.git.signingKey }}
+          {{- end }}
           - --git-set-author={{ .Values.git.setAuthor }}
           - --git-poll-interval={{ .Values.git.pollInterval }}
           - --git-timeout={{ .Values.git.timeout }}
