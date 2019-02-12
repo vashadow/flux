@@ -205,12 +205,14 @@ The following tables lists the configurable parameters of the Weave Flux chart a
 | `git.path` | Path within git repo to locate Kubernetes manifests (relative path) | `None`
 | `git.user` | Username to use as git committer | `Weave Flux`
 | `git.email` | Email to use as git committer | `support@weave.works`
+| `git.signingKey` | If set, commits will be signed with this GPG key | `None`
 | `git.setAuthor` | If set, the author of git commits will reflect the user who initiated the commit and will differ from the git committer. | `false`
 | `git.label` | Label to keep track of sync progress, used to tag the Git branch | `flux-sync`
 | `git.ciSkip` | Append "[ci skip]" to commit messages so that CI will skip builds | `false`
 | `git.pollInterval` | Period at which to poll git repo for new commits | `5m`
 | `git.timeout` | Duration after which git operations time out | `20s`
 | `git.secretName` | Kubernetes secret with the SSH private key. Superceded by `helmOperator.git.secretName` if set. | `None`
+| `gpgKeys.secretName` | Kubernetes secret with GPG keys the Flux daemon should import | `None`
 | `ssh.known_hosts`  | The contents of an SSH `known_hosts` file, if you need to supply host key(s) | `None`
 | `registry.pollInterval` | Period at which to check for updated images | `5m`
 | `registry.rps` | Maximum registry requests per second per host | `200`
