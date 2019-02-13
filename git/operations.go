@@ -189,6 +189,14 @@ func revlist(ctx context.Context, path, ref string) ([]string, error) {
 	return splitList(out.String()), nil
 }
 
+func verifyCommit(ctx context.Context, path, commit string) error {
+	out := &bytes.Buffer{}
+	if err := execGitCmd(ctx, path, out, nil, "verify-commit", commit); err != nil {
+		return errors.Wrap(err, fmt.Sprintf("verifying signature of commit: %s", commit))
+	}
+	return nil
+}
+
 // Return the revisions and one-line log commit messages
 func onelinelog(ctx context.Context, path, refspec string, subdirs []string) ([]Commit, error) {
 	out := &bytes.Buffer{}
