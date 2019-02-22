@@ -1,7 +1,6 @@
 package release
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/go-kit/kit/log"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/helm/pkg/chartutil"
 	k8shelm "k8s.io/helm/pkg/helm"
@@ -19,6 +19,7 @@ import (
 	"github.com/weaveworks/flux"
 	fluxk8s "github.com/weaveworks/flux/cluster/kubernetes"
 	flux_v1beta1 "github.com/weaveworks/flux/integrations/apis/flux.weave.works/v1beta1"
+	helmutil "k8s.io/helm/pkg/releaseutil"
 )
 
 type Action string
@@ -197,7 +198,7 @@ func (r *Release) Install(chartPath, releaseName string, fhr flux_v1beta1.HelmRe
 			return nil, err
 		}
 		if !opts.DryRun {
-			err = r.annotateResources(res.Release, fhr)
+			r.annotateResources(res.Release, fhr)
 		}
 		return res.Release, err
 	case UpgradeAction:
@@ -215,7 +216,7 @@ func (r *Release) Install(chartPath, releaseName string, fhr flux_v1beta1.HelmRe
 			return nil, err
 		}
 		if !opts.DryRun {
-			err = r.annotateResources(res.Release, fhr)
+			r.annotateResources(res.Release, fhr)
 		}
 		return res.Release, err
 	default:
@@ -246,22 +247,61 @@ func (r *Release) Delete(name string) error {
 
 // annotateResources annotates each of the resources created (or updated)
 // by the release so that we can spot them.
-func (r *Release) annotateResources(release *hapi_release.Release, fhr flux_v1beta1.HelmRelease) error {
-	args := []string{"annotate", "--overwrite"}
-	args = append(args, "--namespace", release.Namespace)
-	args = append(args, "-f", "-")
-	args = append(args, fluxk8s.AntecedentAnnotation+"="+fhrResourceID(fhr).String())
+func (r *Release) annotateResources(release *hapi_release.Release, fhr flux_v1beta1.HelmRelease) {
+	manifests := helmutil.SplitManifests(release.Manifest)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "kubectl", args...)
-	cmd.Stdin = bytes.NewBufferString(release.Manifest)
+	var objs []unstructured.Unstructured
+	for _, manifest := range manifests {
+		json, err := yaml.YAMLToJSON([]byte(manifest))
+		if err != nil {
+			r.logger.Log("err", err)
+			continue
+		}
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		r.logger.Log("output", string(output), "err", err)
+		var u unstructured.Unstructured
+		if err := u.UnmarshalJSON(json); err != nil {
+			r.logger.Log("err", err)
+		}
+
+		// Helm charts may include list kinds, we are only interested in
+		// the items on those lists.
+		if u.IsList() {
+			l, err := u.ToList()
+			if err != nil {
+				r.logger.Log("err", err)
+			}
+			objs = append(objs, l.Items...)
+			continue
+		}
+
+		objs = append(objs, u)
 	}
-	return err
+
+	resources := make(map[string][]string)
+	for _, obj := range objs {
+		namespace := obj.GetNamespace()
+		if namespace == "" {
+			namespace = release.Namespace
+		}
+		resource := obj.GetKind() + "/" + obj.GetName()
+		resources[namespace] = append(resources[namespace], resource)
+	}
+
+	for namespace, res := range resources {
+		args := []string{"annotate", "--overwrite"}
+		args = append(args, "--namespace", namespace)
+		args = append(args, res...)
+		args = append(args, fluxk8s.AntecedentAnnotation+"="+fhrResourceID(fhr).String())
+
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, "kubectl", args...)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			r.logger.Log("output", string(output), "err", err)
+		}
+	}
 }
 
 // fhrResourceID constructs a flux.ResourceID for a HelmRelease resource.
